@@ -2,16 +2,26 @@ import WebSocket from "ws";
 import https from "https";
 import http from "http";
 import http2 from "http2";
+import os from "os";
+import crypto from "crypto";
 import { Hello, Execute, Result, ServerMessage } from "./types";
 
 export class Runner {
   private ws: WebSocket | null = null;
   private token: string;
+  private runnerId: string;
   private serverUrl: string;
 
   constructor(serverUrl: string, token: string) {
     this.serverUrl = serverUrl;
     this.token = token;
+    this.runnerId = this.generateRunnerId();
+  }
+
+  private generateRunnerId(): string {
+    const hostname = os.hostname();
+    const uniqueId = crypto.randomBytes(4).toString("hex");
+    return `${hostname}-${uniqueId}`;
   }
 
   connect(): void {
@@ -43,11 +53,11 @@ export class Runner {
   private sendHello(): void {
     const hello: Hello = {
       type: "hello",
-      runnerId: this.token,
+      runnerId: this.runnerId,
+      token: this.token,
       capabilities: ["http"],
     };
     this.send(hello);
-    console.log("Sent hello");
   }
 
   private async handleMessage(message: ServerMessage): Promise<void> {
