@@ -148,6 +148,8 @@ export class Runner {
           : new http.Agent({ keepAlive: options.keepAlive });
       }
 
+      console.log(`[${new Date().toISOString()}] ${execute.request.method} ${url.href}`);
+      
       const req = transport.request(reqOptions, (res) => {
         if (followRedirects && res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (redirectCount >= maxRedirects) {
@@ -211,6 +213,8 @@ export class Runner {
         ":path": url.pathname + url.search,
         ...execute.request.headers,
       };
+
+      console.log(`[${new Date().toISOString()}] ${execute.request.method} ${url.href}`);
 
       const req = client.request(reqHeaders);
       req.setTimeout(timeout, () => {
