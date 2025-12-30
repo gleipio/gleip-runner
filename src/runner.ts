@@ -55,7 +55,7 @@ export class Runner {
       type: "hello",
       runnerId: this.runnerId,
       token: this.token,
-      capabilities: ["http"],
+      capabilities: ["http/s"],
     };
     this.send(hello);
   }

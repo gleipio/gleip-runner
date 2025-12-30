@@ -32,7 +32,7 @@ gleip-runner --token <token> [--server <wss://url>]
 {
   "type": "hello",
   "runnerId": "runner-123",
-  "capabilities": ["http"]
+  "capabilities": ["http/s"]
 }
 ```
 
