@@ -2,6 +2,7 @@ export type Hello = {
   type: "hello";
   runnerId: string;
   token: string;
+  version: string;
   capabilities: string[];
 };
 

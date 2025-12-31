@@ -6,6 +6,8 @@ import os from "os";
 import crypto from "crypto";
 import { Hello, Execute, Result, ServerMessage } from "./types";
 
+const { version } = require("../package.json");
+
 export class Runner {
   private ws: WebSocket | null = null;
   private token: string;
@@ -55,6 +57,7 @@ export class Runner {
       type: "hello",
       runnerId: this.runnerId,
       token: this.token,
+      version: version,
       capabilities: ["http/s"],
     };
     this.send(hello);
