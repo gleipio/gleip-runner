@@ -1,6 +1,6 @@
 {
   "name": "gleip-runner",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "WebSocket-based job runner that executes HTTP requests",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
