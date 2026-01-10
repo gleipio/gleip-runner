@@ -4,7 +4,9 @@ import http from "http";
 import http2 from "http2";
 import os from "os";
 import crypto from "crypto";
-import { Hello, Execute, Result, ServerMessage } from "./types";
+import { Hello, Execute, Result, ServerMessage, BrowserStart, BrowserStop } from "./types";
+import { BrowserWSS } from "./browser-wss";
+import { BrowserSession } from "./browser-session";
 
 const { version } = require("../package.json");
 
@@ -13,6 +15,8 @@ export class Runner {
   private token: string;
   private runnerId: string;
   private serverUrl: string;
+  private browserWSS: BrowserWSS | null = null;
+  private pendingBrowserStart: BrowserStart | null = null;
 
   constructor(serverUrl: string, token: string) {
     this.serverUrl = serverUrl;
@@ -58,7 +62,7 @@ export class Runner {
       runnerId: this.runnerId,
       token: this.token,
       version: version,
-      capabilities: ["http/s"],
+      capabilities: ["http/s", "browser"],
     };
     this.send(hello);
   }
@@ -66,6 +70,10 @@ export class Runner {
   private async handleMessage(message: ServerMessage): Promise<void> {
     if (message.type === "execute") {
       await this.handleExecute(message);
+    } else if (message.type === "browser:start") {
+      await this.handleBrowserStart(message);
+    } else if (message.type === "browser:stop") {
+      await this.handleBrowserStop(message);
     }
   }
 
@@ -260,6 +268,89 @@ export class Runner {
     });
   }
 
+  private async handleBrowserStart(message: BrowserStart): Promise<void> {
+    console.log(`Browser start request for session ${message.sessionId}`);
+
+    // Check if there's already an active session
+    if (this.browserWSS?.getSession()?.isActive()) {
+      console.log("Browser session already active, ignoring start request");
+      return;
+    }
+
+    // Store the request and wait for browser WSS to connect
+    this.pendingBrowserStart = message;
+
+    // Connect browser WSS if not already connected
+    if (!this.browserWSS) {
+      this.browserWSS = new BrowserWSS(
+        this.serverUrl,
+        this.runnerId,
+        this.token,
+        () => this.handleBrowserWSSConnect(),
+        () => this.handleBrowserWSSDisconnect()
+      );
+      this.browserWSS.connect();
+    } else if (this.browserWSS.isConnected()) {
+      // Already connected, start immediately
+      await this.startBrowser(message);
+    }
+  }
+
+  private async startBrowser(message: BrowserStart): Promise<void> {
+    if (!this.browserWSS) {
+      console.error("Cannot start browser: browser WSS not initialized");
+      return;
+    }
+
+    try {
+      const session = new BrowserSession(message.sessionId, message.options);
+      await session.start();
+      await this.browserWSS.attachSession(session);
+      this.pendingBrowserStart = null;
+      console.log(`Browser session ${message.sessionId} started successfully`);
+    } catch (err) {
+      console.error("Failed to start browser:", err);
+      this.browserWSS.sendAck(
+        message.sessionId,
+        "error",
+        err instanceof Error ? err.message : String(err)
+      );
+      this.pendingBrowserStart = null;
+    }
+  }
+
+  private async handleBrowserStop(message: BrowserStop): Promise<void> {
+    console.log(`Browser stop request for session ${message.sessionId}`);
+
+    if (!this.browserWSS) {
+      console.log("No browser WSS connection");
+      return;
+    }
+
+    const session = this.browserWSS.getSession();
+    if (session && session.sessionId === message.sessionId) {
+      await this.browserWSS.detachSession();
+      this.browserWSS.sendAck(message.sessionId, "stopped");
+      console.log(`Browser session ${message.sessionId} stopped`);
+    } else {
+      console.log(`Session ${message.sessionId} not found or mismatch`);
+    }
+  }
+
+  private handleBrowserWSSConnect(): void {
+    console.log("Browser WSS connected");
+    // If there's a pending start request, execute it now
+    if (this.pendingBrowserStart) {
+      this.startBrowser(this.pendingBrowserStart);
+    }
+  }
+
+  private handleBrowserWSSDisconnect(): void {
+    console.log("Browser WSS disconnected, cleaning up browser session");
+    this.browserWSS = null;
+    this.pendingBrowserStart = null;
+  }
+
   private send(message: Hello | Result): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
@@ -267,6 +358,10 @@ export class Runner {
   }
 
   disconnect(): void {
+    if (this.browserWSS) {
+      this.browserWSS.disconnect();
+      this.browserWSS = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
