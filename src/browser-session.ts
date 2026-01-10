@@ -30,8 +30,32 @@ export class BrowserSession {
 
     console.log(`Starting browser session ${this.sessionId} (headless: ${headless})`);
 
-    this.browser = await chromium.launch({ headless });
-    const context = await this.browser.newContext({ viewport });
+    const args = [
+      "--disable-blink-features=AutomationControlled",
+      "--disable-infobars",
+      "--headless=new",
+    ];
+
+    this.browser = await chromium.launch({
+      headless: false, // Must be false to use --headless=new from args
+      channel: "chrome",
+      args,
+    });
+
+    const context = await this.browser.newContext({
+      viewport,
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      isMobile: false,
+      javaScriptEnabled: true,
+      locale: "en-US",
+      timezoneId: "America/New_York",
+      permissions: ["geolocation"],
+      geolocation: { latitude: 40.7128, longitude: -74.006 },
+    });
+
     this.page = await context.newPage();
 
     console.log(`Browser session ${this.sessionId} started`);
