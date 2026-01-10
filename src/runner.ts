@@ -79,7 +79,7 @@ export class Runner {
 
   private async handleExecute(execute: Execute): Promise<void> {
     console.log(`Executing job ${execute.jobId}: ${execute.request.method} ${execute.request.url}`);
-    
+
     const startTime = Date.now();
     let result: Result;
     const options = execute.options ?? {};
@@ -160,7 +160,7 @@ export class Runner {
       }
 
       console.log(`[${new Date().toISOString()}] ${execute.request.method} ${url.href}`);
-      
+
       const req = transport.request(reqOptions, (res) => {
         if (followRedirects && res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (redirectCount >= maxRedirects) {
@@ -286,6 +286,7 @@ export class Runner {
         this.serverUrl,
         this.runnerId,
         this.token,
+        message.sessionId,
         () => this.handleBrowserWSSConnect(),
         () => this.handleBrowserWSSDisconnect()
       );
@@ -302,19 +303,36 @@ export class Runner {
       return;
     }
 
+    let session: BrowserSession | null = null;
     try {
-      const session = new BrowserSession(message.sessionId, message.options);
+      session = new BrowserSession(message.sessionId, message.options);
       await session.start();
+
+      // Check if browserWSS is still connected after async operation
+      if (!this.browserWSS) {
+        console.error("Browser WSS disconnected during browser startup, cleaning up");
+        await session.stop();
+        this.pendingBrowserStart = null;
+        return;
+      }
+
       await this.browserWSS.attachSession(session);
       this.pendingBrowserStart = null;
       console.log(`Browser session ${message.sessionId} started successfully`);
     } catch (err) {
       console.error("Failed to start browser:", err);
-      this.browserWSS.sendAck(
-        message.sessionId,
-        "error",
-        err instanceof Error ? err.message : String(err)
-      );
+      // Clean up session if it was created
+      if (session?.isActive()) {
+        await session.stop().catch(() => { });
+      }
+      // Only send ack if browserWSS is still available
+      if (this.browserWSS) {
+        this.browserWSS.sendAck(
+          message.sessionId,
+          "error",
+          err instanceof Error ? err.message : String(err)
+        );
+      }
       this.pendingBrowserStart = null;
     }
   }
@@ -332,6 +350,11 @@ export class Runner {
       await this.browserWSS.detachSession();
       this.browserWSS.sendAck(message.sessionId, "stopped");
       console.log(`Browser session ${message.sessionId} stopped`);
+
+      // Since the browser WSS connection is tied to the session ID in the hello message,
+      // we should disconnect it when the session stops.
+      this.browserWSS.disconnect();
+      this.browserWSS = null;
     } else {
       console.log(`Session ${message.sessionId} not found or mismatch`);
     }

@@ -58,9 +58,10 @@ export type BrowserStop = {
 
 // Browser WSS messages (frames and input)
 export type BrowserHello = {
-  type: "hello";
+  type: "browser:hello";
   runnerId: string;
   token: string;
+  sessionId: string;
 };
 
 export type BrowserFrame = {
@@ -84,12 +85,14 @@ export type BrowserInputAction =
   | { kind: "scroll"; x: number; y: number; deltaX: number; deltaY: number }
   | { kind: "keydown"; key: string; modifiers?: KeyModifiers }
   | { kind: "keyup"; key: string; modifiers?: KeyModifiers }
-  | { kind: "type"; text: string };
+  | { kind: "type"; text: string }
+  | { kind: "navigate"; url: string }
+  | { kind: "refresh" };
 
 export type BrowserInputEvent = {
   type: "browser:input";
   sessionId: string;
-  event: BrowserInputAction;
+  action: BrowserInputAction;
 };
 
 export type BrowserAck = {

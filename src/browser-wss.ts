@@ -13,6 +13,7 @@ export class BrowserWSS {
   private serverUrl: string;
   private token: string;
   private runnerId: string;
+  private sessionId: string;
   private session: BrowserSession | null = null;
   private onDisconnect: () => void;
   private onConnect: () => void;
@@ -21,6 +22,7 @@ export class BrowserWSS {
     serverUrl: string,
     runnerId: string,
     token: string,
+    sessionId: string,
     onConnect: () => void,
     onDisconnect: () => void
   ) {
@@ -28,6 +30,7 @@ export class BrowserWSS {
     this.serverUrl = serverUrl.replace(/\/runner$/, "/runner/browser");
     this.runnerId = runnerId;
     this.token = token;
+    this.sessionId = sessionId;
     this.onConnect = onConnect;
     this.onDisconnect = onDisconnect;
   }
@@ -74,10 +77,12 @@ export class BrowserWSS {
 
     // Send hello message with runnerId and token
     const hello: BrowserHello = {
-      type: "hello",
+      type: "browser:hello",
       runnerId: this.runnerId,
       token: this.token,
+      sessionId: this.sessionId,
     };
+    console.log("Sending browser hello:", JSON.stringify(hello));
     this.send(hello);
   }
 
@@ -90,8 +95,13 @@ export class BrowserWSS {
         this.session.sessionId === message.sessionId &&
         this.session.isActive()
       ) {
+        if (!message.action) {
+          console.warn("Received browser:input message without action", message);
+          return;
+        }
+
         try {
-          await this.session.handleInput(message.event);
+          await this.session.handleInput(message.action);
         } catch (err) {
           console.error("Input handling error:", err);
         }
@@ -133,6 +143,7 @@ export class BrowserWSS {
     };
     this.send(frame);
   }
+
 
   sendAck(sessionId: string, status: "started" | "stopped" | "error", error?: string): void {
     const ack: BrowserAck = {

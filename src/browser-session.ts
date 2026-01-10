@@ -19,7 +19,7 @@ export class BrowserSession {
     }
 
     const viewport = this.options?.viewport || { width: 1280, height: 800 };
-    const headless = this.options?.headless ?? false;
+    const headless = this.options?.headless ?? true;
 
     console.log(`Starting browser session ${this.sessionId} (headless: ${headless})`);
 
@@ -77,6 +77,7 @@ export class BrowserSession {
     }, 200);
   }
 
+
   stopFrameCapture(): void {
     if (this.frameInterval) {
       clearInterval(this.frameInterval);
@@ -117,6 +118,14 @@ export class BrowserSession {
 
       case "type":
         await this.page.keyboard.type(event.text);
+        break;
+
+      case "navigate":
+        await this.page.goto(event.url);
+        break;
+
+      case "refresh":
+        await this.page.reload();
         break;
     }
   }
