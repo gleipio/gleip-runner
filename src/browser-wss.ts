@@ -5,6 +5,7 @@ import type {
   BrowserHello,
   BrowserFrame,
   BrowserAck,
+  BrowserTraffic,
 } from "./types";
 import { BrowserSession } from "./browser-session";
 
@@ -122,6 +123,14 @@ export class BrowserWSS {
       this.sendFrame(session.sessionId, frame);
     });
 
+    // Start traffic capture
+    this.session.startTrafficCapture((traffic) => {
+      this.sendTraffic(traffic);
+    });
+
+    // Navigate to initial URL if provided (after traffic capture is set up)
+    await this.session.navigateToInitialUrl();
+
     // Send acknowledgment that browser started
     this.sendAck(session.sessionId, "started");
   }
@@ -129,6 +138,7 @@ export class BrowserWSS {
   async detachSession(): Promise<void> {
     if (this.session) {
       this.session.stopFrameCapture();
+      this.session.stopTrafficCapture();
       await this.session.stop();
       this.session = null;
     }
@@ -155,6 +165,10 @@ export class BrowserWSS {
     this.send(ack);
   }
 
+  sendTraffic(traffic: BrowserTraffic): void {
+    this.send(traffic);
+  }
+
   private send(message: BrowserWSSOutgoingMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
@@ -164,6 +178,7 @@ export class BrowserWSS {
   private cleanup(): void {
     if (this.session) {
       this.session.stopFrameCapture();
+      this.session.stopTrafficCapture();
       this.session.stop().catch((err) => {
         console.error("Error stopping session during cleanup:", err);
       });

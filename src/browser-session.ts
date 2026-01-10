@@ -1,11 +1,18 @@
-import { chromium, Browser, Page } from "playwright";
-import type { BrowserStart, BrowserInputAction } from "./types";
+import { chromium } from "playwright-extra";
+import { Browser, Page, Request } from "playwright";
+import stealthPlugin from "puppeteer-extra-plugin-stealth";
+
+chromium.use(stealthPlugin());
+import type { BrowserStart, BrowserInputAction, BrowserTraffic } from "./types";
 
 export class BrowserSession {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private frameInterval: NodeJS.Timeout | null = null;
+  private requestTimings: Map<Request, number> = new Map();
+  private trafficCallback: ((traffic: BrowserTraffic) => void) | null = null;
   public sessionId: string;
+  public url: string | undefined;
   public options: BrowserStart["options"];
 
   constructor(sessionId: string, options?: BrowserStart["options"]) {
@@ -28,6 +35,13 @@ export class BrowserSession {
     this.page = await context.newPage();
 
     console.log(`Browser session ${this.sessionId} started`);
+  }
+
+  async navigateToInitialUrl(): Promise<void> {
+    if (this.options?.url && this.page) {
+      console.log(`Navigating to ${this.options.url}`);
+      await this.page.goto(this.options.url);
+    }
   }
 
   async stop(): Promise<void> {
@@ -85,6 +99,99 @@ export class BrowserSession {
     }
   }
 
+  startTrafficCapture(callback: (traffic: BrowserTraffic) => void): void {
+    if (!this.page) {
+      throw new Error("No active page");
+    }
+
+    this.trafficCallback = callback;
+
+    this.page.on("request", (request) => {
+      this.requestTimings.set(request, Date.now());
+    });
+
+    this.page.on("response", async (response) => {
+      if (!this.trafficCallback) return;
+
+      const request = response.request();
+      const startTime = this.requestTimings.get(request);
+      const timeMs = startTime ? Date.now() - startTime : 0;
+      this.requestTimings.delete(request);
+
+      const reqHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(request.headers())) {
+        reqHeaders[key] = value;
+      }
+
+      const resHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(response.headers())) {
+        resHeaders[key] = value;
+      }
+
+      let body: string | undefined;
+      try {
+        const buffer = await response.body();
+        body = buffer.toString("utf-8");
+      } catch {
+        // Body may not be available for some responses
+      }
+
+      const traffic: BrowserTraffic = {
+        type: "browser:traffic",
+        sessionId: this.sessionId,
+        request: {
+          method: request.method(),
+          url: request.url(),
+          headers: reqHeaders,
+          body: request.postData() ?? undefined,
+        },
+        response: {
+          status: response.status(),
+          statusText: response.statusText(),
+          headers: resHeaders,
+          body,
+          timeMs,
+        },
+      };
+
+      this.trafficCallback(traffic);
+    });
+
+    this.page.on("requestfailed", (request) => {
+      if (!this.trafficCallback) return;
+
+      this.requestTimings.delete(request);
+
+      const reqHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(request.headers())) {
+        reqHeaders[key] = value;
+      }
+
+      const failure = request.failure();
+      const isTimeout = failure?.errorText?.toLowerCase().includes("timeout");
+
+      const traffic: BrowserTraffic = {
+        type: "browser:traffic",
+        sessionId: this.sessionId,
+        request: {
+          method: request.method(),
+          url: request.url(),
+          headers: reqHeaders,
+          body: request.postData() ?? undefined,
+        },
+        error: failure?.errorText ?? "Request failed",
+        timedOut: isTimeout,
+      };
+
+      this.trafficCallback(traffic);
+    });
+  }
+
+  stopTrafficCapture(): void {
+    this.trafficCallback = null;
+    this.requestTimings.clear();
+  }
+
   async handleInput(event: BrowserInputAction): Promise<void> {
     if (!this.page) {
       throw new Error("No active page");
@@ -121,6 +228,7 @@ export class BrowserSession {
         break;
 
       case "navigate":
+        console.log("Navigating to:", event.url);
         await this.page.goto(event.url);
         break;
 

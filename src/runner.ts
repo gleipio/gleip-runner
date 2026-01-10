@@ -71,6 +71,7 @@ export class Runner {
     if (message.type === "execute") {
       await this.handleExecute(message);
     } else if (message.type === "browser:start") {
+      console.log(`Browser start request ` + JSON.stringify(message));
       await this.handleBrowserStart(message);
     } else if (message.type === "browser:stop") {
       await this.handleBrowserStop(message);
@@ -345,15 +346,16 @@ export class Runner {
       return;
     }
 
-    const session = this.browserWSS.getSession();
+    const browserWSS = this.browserWSS;
+    const session = browserWSS.getSession();
     if (session && session.sessionId === message.sessionId) {
-      await this.browserWSS.detachSession();
-      this.browserWSS.sendAck(message.sessionId, "stopped");
+      browserWSS.sendAck(message.sessionId, "stopped");
+      await browserWSS.detachSession();
       console.log(`Browser session ${message.sessionId} stopped`);
 
       // Since the browser WSS connection is tied to the session ID in the hello message,
       // we should disconnect it when the session stops.
-      this.browserWSS.disconnect();
+      browserWSS.disconnect();
       this.browserWSS = null;
     } else {
       console.log(`Session ${message.sessionId} not found or mismatch`);

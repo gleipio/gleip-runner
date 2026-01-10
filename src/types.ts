@@ -46,6 +46,7 @@ export type BrowserStart = {
   type: "browser:start";
   sessionId: string;
   options?: {
+    url?: string;
     viewport?: { width: number; height: number };
     headless?: boolean;
   };
@@ -102,7 +103,29 @@ export type BrowserAck = {
   error?: string;
 };
 
+export type BrowserTraffic = {
+  type: "browser:traffic";
+  sessionId: string;
+  request: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+    httpVersion?: string;
+  };
+  response?: {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    body?: string;
+    httpVersion?: string;
+    timeMs: number;
+  };
+  error?: string;
+  timedOut?: boolean;
+};
+
 export type ServerMessage = Execute | BrowserStart | BrowserStop;
 export type ClientMessage = Hello | Result;
-export type BrowserWSSOutgoingMessage = BrowserHello | BrowserFrame | BrowserAck;
+export type BrowserWSSOutgoingMessage = BrowserHello | BrowserFrame | BrowserAck | BrowserTraffic;
 export type BrowserWSSIncomingMessage = BrowserInputEvent;
