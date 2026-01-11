@@ -3,9 +3,9 @@ import type {
   BrowserWSSOutgoingMessage,
   BrowserWSSIncomingMessage,
   BrowserHello,
-  BrowserFrame,
   BrowserAck,
   BrowserTraffic,
+  BrowserClosed,
 } from "./types";
 import { BrowserSession } from "./browser-session";
 
@@ -118,9 +118,11 @@ export class BrowserWSS {
 
     this.session = session;
 
-    // Start frame capture
-    this.session.startFrameCapture((frame) => {
-      this.sendFrame(session.sessionId, frame);
+    // Set up browser close handler
+    this.session.setOnBrowserClose(() => {
+      this.sendBrowserClosed(session.sessionId);
+      // Clean up the session locally since the browser is already closed
+      this.session = null;
     });
 
     // Start traffic capture
@@ -137,23 +139,11 @@ export class BrowserWSS {
 
   async detachSession(): Promise<void> {
     if (this.session) {
-      this.session.stopFrameCapture();
       this.session.stopTrafficCapture();
       await this.session.stop();
       this.session = null;
     }
   }
-
-  private sendFrame(sessionId: string, data: string): void {
-    const frame: BrowserFrame = {
-      type: "browser:frame",
-      sessionId,
-      mime: "image/jpeg",
-      data,
-    };
-    this.send(frame);
-  }
-
 
   sendAck(sessionId: string, status: "started" | "stopped" | "error", error?: string): void {
     const ack: BrowserAck = {
@@ -163,6 +153,15 @@ export class BrowserWSS {
       error,
     };
     this.send(ack);
+  }
+
+  sendBrowserClosed(sessionId: string): void {
+    const closed: BrowserClosed = {
+      type: "browser:closed",
+      sessionId,
+    };
+    this.send(closed);
+    console.log(`Notified server that browser closed for session ${sessionId}`);
   }
 
   sendTraffic(traffic: BrowserTraffic): void {
@@ -177,7 +176,6 @@ export class BrowserWSS {
 
   private cleanup(): void {
     if (this.session) {
-      this.session.stopFrameCapture();
       this.session.stopTrafficCapture();
       this.session.stop().catch((err) => {
         console.error("Error stopping session during cleanup:", err);

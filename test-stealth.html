@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bot Detection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .pass {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .fail {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        h1 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Bot Detection Test Results</h1>
+    <div id="results"></div>
+
+    <script>
+        const results = document.getElementById('results');
+
+        function addTest(name, passed, details) {
+            const div = document.createElement('div');
+            div.className = `test ${passed ? 'pass' : 'fail'}`;
+            div.innerHTML = `<strong>${passed ? '✓' : '✗'} ${name}</strong><br>${details}`;
+            results.appendChild(div);
+        }
+
+        // Test 1: WebDriver
+        addTest(
+            'WebDriver Property',
+            navigator.webdriver === undefined,
+            `navigator.webdriver = ${navigator.webdriver}`
+        );
+
+        // Test 2: Chrome Object
+        addTest(
+            'Chrome Object',
+            window.chrome && window.chrome.runtime,
+            `window.chrome exists: ${!!window.chrome}`
+        );
+
+        // Test 3: Plugins
+        addTest(
+            'Plugins',
+            navigator.plugins.length > 0,
+            `${navigator.plugins.length} plugins detected`
+        );
+
+        // Test 4: Languages
+        addTest(
+            'Languages',
+            navigator.languages && navigator.languages.length > 0,
+            `Languages: ${navigator.languages ? navigator.languages.join(', ') : 'none'}`
+        );
+
+        // Test 5: WebGL Vendor
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl');
+        const debugInfo = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+        const vendor = debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : 'Not available';
+        const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'Not available';
+
+        addTest(
+            'WebGL Fingerprint',
+            vendor && !vendor.includes('Google'),
+            `Vendor: ${vendor}<br>Renderer: ${renderer}`
+        );
+
+        // Test 6: User Agent
+        addTest(
+            'User Agent',
+            navigator.userAgent.includes('Chrome/131'),
+            `${navigator.userAgent}`
+        );
+
+        // Test 7: Platform
+        addTest(
+            'Platform',
+            navigator.platform === 'MacIntel',
+            `Platform: ${navigator.platform}`
+        );
+
+        // Test 8: Hardware Concurrency
+        addTest(
+            'Hardware Concurrency',
+            navigator.hardwareConcurrency >= 4,
+            `CPU Cores: ${navigator.hardwareConcurrency}`
+        );
+
+        // Test 9: Device Memory
+        addTest(
+            'Device Memory',
+            navigator.deviceMemory >= 4,
+            `Memory: ${navigator.deviceMemory}GB`
+        );
+
+        // Test 10: Permissions API
+        addTest(
+            'Permissions API',
+            navigator.permissions && navigator.permissions.query,
+            `Permissions API available: ${!!(navigator.permissions && navigator.permissions.query)}`
+        );
+
+        // Test 11: Battery API
+        addTest(
+            'Battery API',
+            navigator.getBattery !== undefined,
+            `Battery API available: ${navigator.getBattery !== undefined}`
+        );
+
+        // Test 12: Check for automation properties
+        const automationProps = [];
+        if ('__playwright' in window) automationProps.push('__playwright');
+        if ('__pw_manual' in window) automationProps.push('__pw_manual');
+        if ('__webdriver_evaluate' in window) automationProps.push('__webdriver_evaluate');
+        if ('__selenium_evaluate' in window) automationProps.push('__selenium_evaluate');
+        if ('__webdriver_script_function' in window) automationProps.push('__webdriver_script_function');
+
+        addTest(
+            'Automation Properties',
+            automationProps.length === 0,
+            automationProps.length === 0 ? 'No automation properties detected' : `Found: ${automationProps.join(', ')}`
+        );
+
+        // Test 13: Function toString
+        const queryToString = navigator.permissions.query.toString();
+        addTest(
+            'Function toString',
+            queryToString.includes('[native code]'),
+            `permissions.query.toString(): ${queryToString}`
+        );
+
+        // Overall summary
+        const allTests = document.querySelectorAll('.test');
+        const passed = document.querySelectorAll('.test.pass').length;
+        const failed = document.querySelectorAll('.test.fail').length;
+
+        const summary = document.createElement('div');
+        summary.style.marginTop = '20px';
+        summary.style.padding = '20px';
+        summary.style.backgroundColor = passed > failed ? '#d4edda' : '#f8d7da';
+        summary.style.borderRadius = '5px';
+        summary.innerHTML = `<h2>Summary: ${passed}/${allTests.length} tests passed</h2>`;
+        results.insertBefore(summary, results.firstChild);
+    </script>
+</body>
+</html>

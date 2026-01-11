@@ -1,16 +1,13 @@
-import { chromium } from "playwright-extra";
-import { Browser, Page, Request } from "playwright";
-import stealthPlugin from "puppeteer-extra-plugin-stealth";
-
-chromium.use(stealthPlugin());
+import { chromium, Browser, Page, Request } from "patchright";
 import type { BrowserStart, BrowserInputAction, BrowserTraffic } from "./types";
+import { applyStealth, getRealisticUserAgent } from "./stealth";
 
 export class BrowserSession {
   private browser: Browser | null = null;
   private page: Page | null = null;
-  private frameInterval: NodeJS.Timeout | null = null;
   private requestTimings: Map<Request, number> = new Map();
   private trafficCallback: ((traffic: BrowserTraffic) => void) | null = null;
+  private onBrowserClose: (() => void) | null = null;
   public sessionId: string;
   public url: string | undefined;
   public options: BrowserStart["options"];
@@ -26,37 +23,54 @@ export class BrowserSession {
     }
 
     const viewport = this.options?.viewport || { width: 1280, height: 800 };
-    const headless = this.options?.headless ?? true;
 
-    console.log(`Starting browser session ${this.sessionId} (headless: ${headless})`);
-
-    const args = [
-      "--disable-blink-features=AutomationControlled",
-      "--disable-infobars",
-      "--headless=new",
-    ];
+    console.log(`Starting browser session ${this.sessionId}`);
 
     this.browser = await chromium.launch({
-      headless: false, // Must be false to use --headless=new from args
+      headless: false,
       channel: "chrome",
-      args,
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-infobars",
+        "--window-position=0,0",
+        "--ignore-certificate-errors",
+        "--ignore-certificate-errors-spki-list",
+      ],
+    });
+
+    // Detect when browser is closed by the user
+    this.browser.on("disconnected", () => {
+      console.log(`Browser closed by user for session ${this.sessionId}`);
+      if (this.onBrowserClose) {
+        this.onBrowserClose();
+      }
     });
 
     const context = await this.browser.newContext({
       viewport,
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      userAgent: getRealisticUserAgent(),
       deviceScaleFactor: 1,
       hasTouch: false,
       isMobile: false,
       javaScriptEnabled: true,
       locale: "en-US",
       timezoneId: "America/New_York",
-      permissions: ["geolocation"],
-      geolocation: { latitude: 40.7128, longitude: -74.006 },
+      permissions: [],
+      colorScheme: "light",
+      // Don't set extraHTTPHeaders - let browser set them naturally
+      // This avoids header ordering issues that can be detected
+      bypassCSP: false,
+      ignoreHTTPSErrors: true,
     });
 
+
+
     this.page = await context.newPage();
+
+    // Apply comprehensive stealth scripts to the page
+    await applyStealth(this.page);
 
     console.log(`Browser session ${this.sessionId} started`);
   }
@@ -69,11 +83,6 @@ export class BrowserSession {
   }
 
   async stop(): Promise<void> {
-    if (this.frameInterval) {
-      clearInterval(this.frameInterval);
-      this.frameInterval = null;
-    }
-
     if (this.browser) {
       await this.browser.close();
       this.browser = null;
@@ -86,41 +95,8 @@ export class BrowserSession {
     return this.browser !== null && this.page !== null;
   }
 
-  async captureFrame(): Promise<string> {
-    if (!this.page) {
-      throw new Error("No active page");
-    }
-
-    const screenshot = await this.page.screenshot({
-      type: "jpeg",
-      quality: 60,
-    });
-
-    return screenshot.toString("base64");
-  }
-
-  startFrameCapture(callback: (frame: string) => void): void {
-    if (this.frameInterval) {
-      return;
-    }
-
-    // Capture frame every 200ms (~5 FPS)
-    this.frameInterval = setInterval(async () => {
-      try {
-        const frame = await this.captureFrame();
-        callback(frame);
-      } catch (err) {
-        console.error("Frame capture error:", err);
-      }
-    }, 200);
-  }
-
-
-  stopFrameCapture(): void {
-    if (this.frameInterval) {
-      clearInterval(this.frameInterval);
-      this.frameInterval = null;
-    }
+  setOnBrowserClose(callback: () => void): void {
+    this.onBrowserClose = callback;
   }
 
   startTrafficCapture(callback: (traffic: BrowserTraffic) => void): void {
@@ -253,11 +229,17 @@ export class BrowserSession {
 
       case "navigate":
         console.log("Navigating to:", event.url);
-        await this.page.goto(event.url);
+        await this.page.goto(event.url, {
+          waitUntil: "domcontentloaded",
+          timeout: 30000,
+        });
         break;
 
       case "refresh":
-        await this.page.reload();
+        await this.page.reload({
+          waitUntil: "domcontentloaded",
+          timeout: 30000,
+        });
         break;
     }
   }

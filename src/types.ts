@@ -65,11 +65,9 @@ export type BrowserHello = {
   sessionId: string;
 };
 
-export type BrowserFrame = {
-  type: "browser:frame";
+export type BrowserClosed = {
+  type: "browser:closed";
   sessionId: string;
-  mime: "image/jpeg";
-  data: string; // base64
 };
 
 export type KeyModifiers = {
@@ -127,5 +125,5 @@ export type BrowserTraffic = {
 
 export type ServerMessage = Execute | BrowserStart | BrowserStop;
 export type ClientMessage = Hello | Result;
-export type BrowserWSSOutgoingMessage = BrowserHello | BrowserFrame | BrowserAck | BrowserTraffic;
+export type BrowserWSSOutgoingMessage = BrowserHello | BrowserAck | BrowserTraffic | BrowserClosed;
 export type BrowserWSSIncomingMessage = BrowserInputEvent;
