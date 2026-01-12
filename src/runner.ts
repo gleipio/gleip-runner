@@ -17,10 +17,13 @@ export class Runner {
   private serverUrl: string;
   private browserWSS: BrowserWSS | null = null;
   private pendingBrowserStart: BrowserStart | null = null;
+  private headless: boolean;
+  private isAutoStartedBrowser: boolean = false;
 
-  constructor(serverUrl: string, token: string) {
+  constructor(serverUrl: string, token: string, headless: boolean = false) {
     this.serverUrl = serverUrl;
     this.token = token;
+    this.headless = headless;
     this.runnerId = this.generateRunnerId();
   }
 
@@ -33,9 +36,14 @@ export class Runner {
   connect(): void {
     this.ws = new WebSocket(this.serverUrl);
 
-    this.ws.on("open", () => {
+    this.ws.on("open", async () => {
       console.log(`Connected to ${this.serverUrl}`);
       this.sendHello();
+
+      // Start browser automatically unless in headless mode
+      if (!this.headless) {
+        await this.startBrowserOnConnect();
+      }
     });
 
     this.ws.on("message", (data) => {
@@ -57,23 +65,60 @@ export class Runner {
   }
 
   private sendHello(): void {
+    const capabilities = this.headless ? ["http/s"] : ["http/s", "browser"];
     const hello: Hello = {
       type: "hello",
       runnerId: this.runnerId,
       token: this.token,
       version: version,
-      capabilities: ["http/s", "browser"],
+      capabilities,
     };
     this.send(hello);
+  }
+
+  private async startBrowserOnConnect(): Promise<void> {
+    const sessionId = crypto.randomBytes(8).toString("hex");
+    console.log(`Auto-starting browser session: ${sessionId}`);
+
+    // Mark this as an auto-started browser
+    this.isAutoStartedBrowser = true;
+
+    // Initialize browser WSS
+    this.browserWSS = new BrowserWSS(
+      this.serverUrl,
+      this.runnerId,
+      this.token,
+      sessionId,
+      () => this.handleBrowserWSSConnect(),
+      () => this.handleBrowserWSSDisconnect()
+    );
+    this.browserWSS.connect();
+
+    // Create the start message
+    const startMessage: BrowserStart = {
+      type: "browser:start",
+      sessionId,
+      options: {}
+    };
+
+    this.pendingBrowserStart = startMessage;
   }
 
   private async handleMessage(message: ServerMessage): Promise<void> {
     if (message.type === "execute") {
       await this.handleExecute(message);
     } else if (message.type === "browser:start") {
+      if (this.headless) {
+        console.log("Ignoring browser:start request in headless mode");
+        return;
+      }
       console.log(`Browser start request ` + JSON.stringify(message));
       await this.handleBrowserStart(message);
     } else if (message.type === "browser:stop") {
+      if (this.headless) {
+        console.log("Ignoring browser:stop request in headless mode");
+        return;
+      }
       await this.handleBrowserStop(message);
     }
   }
@@ -278,6 +323,9 @@ export class Runner {
       return;
     }
 
+    // This is a server-requested start, not auto-started
+    this.isAutoStartedBrowser = false;
+
     // Store the request and wait for browser WSS to connect
     this.pendingBrowserStart = message;
 
@@ -317,7 +365,9 @@ export class Runner {
         return;
       }
 
-      await this.browserWSS.attachSession(session);
+      // Don't send ack for auto-started browser
+      const sendAck = !this.isAutoStartedBrowser;
+      await this.browserWSS.attachSession(session, sendAck);
       this.pendingBrowserStart = null;
       console.log(`Browser session ${message.sessionId} started successfully`);
     } catch (err) {
@@ -326,8 +376,8 @@ export class Runner {
       if (session?.isActive()) {
         await session.stop().catch(() => { });
       }
-      // Only send ack if browserWSS is still available
-      if (this.browserWSS) {
+      // Only send ack if browserWSS is still available and not auto-started
+      if (this.browserWSS && !this.isAutoStartedBrowser) {
         this.browserWSS.sendAck(
           message.sessionId,
           "error",
@@ -374,6 +424,7 @@ export class Runner {
     console.log("Browser WSS disconnected, cleaning up browser session");
     this.browserWSS = null;
     this.pendingBrowserStart = null;
+    this.isAutoStartedBrowser = false;
   }
 
   private send(message: Hello | Result): void {

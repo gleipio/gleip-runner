@@ -110,7 +110,7 @@ export class BrowserWSS {
     }
   }
 
-  async attachSession(session: BrowserSession): Promise<void> {
+  async attachSession(session: BrowserSession, sendAck: boolean = true): Promise<void> {
     if (this.session) {
       console.log("Detaching existing session before attaching new one");
       await this.detachSession();
@@ -133,8 +133,10 @@ export class BrowserWSS {
     // Navigate to initial URL if provided (after traffic capture is set up)
     await this.session.navigateToInitialUrl();
 
-    // Send acknowledgment that browser started
-    this.sendAck(session.sessionId, "started");
+    // Send acknowledgment that browser started (only if requested)
+    if (sendAck) {
+      this.sendAck(session.sessionId, "started");
+    }
   }
 
   async detachSession(): Promise<void> {
