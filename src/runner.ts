@@ -4,7 +4,7 @@ import http from "http";
 import http2 from "http2";
 import os from "os";
 import crypto from "crypto";
-import { Hello, Execute, Result, ServerMessage, BrowserStart, BrowserStop } from "./types";
+import { Hello, Execute, Result, ServerMessage } from "./types";
 import { BrowserWSS } from "./browser-wss";
 import { BrowserSession } from "./browser-session";
 
@@ -16,9 +16,7 @@ export class Runner {
   private runnerId: string;
   private serverUrl: string;
   private browserWSS: BrowserWSS | null = null;
-  private pendingBrowserStart: BrowserStart | null = null;
   private headless: boolean;
-  private isAutoStartedBrowser: boolean = false;
 
   constructor(serverUrl: string, token: string, headless: boolean = false) {
     this.serverUrl = serverUrl;
@@ -80,9 +78,6 @@ export class Runner {
     const sessionId = crypto.randomBytes(8).toString("hex");
     console.log(`Auto-starting browser session: ${sessionId}`);
 
-    // Mark this as an auto-started browser
-    this.isAutoStartedBrowser = true;
-
     // Initialize browser WSS
     this.browserWSS = new BrowserWSS(
       this.serverUrl,
@@ -94,32 +89,27 @@ export class Runner {
     );
     this.browserWSS.connect();
 
-    // Create the start message
-    const startMessage: BrowserStart = {
-      type: "browser:start",
-      sessionId,
-      options: {}
-    };
+    // Start browser session
+    try {
+      const session = new BrowserSession(sessionId, {});
+      await session.start();
 
-    this.pendingBrowserStart = startMessage;
+      if (!this.browserWSS) {
+        console.error("Browser WSS disconnected during browser startup, cleaning up");
+        await session.stop();
+        return;
+      }
+
+      await this.browserWSS.attachSession(session);
+      console.log(`Browser session ${sessionId} started successfully`);
+    } catch (err) {
+      console.error("Failed to start browser:", err);
+    }
   }
 
   private async handleMessage(message: ServerMessage): Promise<void> {
     if (message.type === "execute") {
       await this.handleExecute(message);
-    } else if (message.type === "browser:start") {
-      if (this.headless) {
-        console.log("Ignoring browser:start request in headless mode");
-        return;
-      }
-      console.log(`Browser start request ` + JSON.stringify(message));
-      await this.handleBrowserStart(message);
-    } else if (message.type === "browser:stop") {
-      if (this.headless) {
-        console.log("Ignoring browser:stop request in headless mode");
-        return;
-      }
-      await this.handleBrowserStop(message);
     }
   }
 
@@ -314,117 +304,15 @@ export class Runner {
     });
   }
 
-  private async handleBrowserStart(message: BrowserStart): Promise<void> {
-    console.log(`Browser start request for session ${message.sessionId}`);
 
-    // Check if there's already an active session
-    if (this.browserWSS?.getSession()?.isActive()) {
-      console.log("Browser session already active, ignoring start request");
-      return;
-    }
-
-    // This is a server-requested start, not auto-started
-    this.isAutoStartedBrowser = false;
-
-    // Store the request and wait for browser WSS to connect
-    this.pendingBrowserStart = message;
-
-    // Connect browser WSS if not already connected
-    if (!this.browserWSS) {
-      this.browserWSS = new BrowserWSS(
-        this.serverUrl,
-        this.runnerId,
-        this.token,
-        message.sessionId,
-        () => this.handleBrowserWSSConnect(),
-        () => this.handleBrowserWSSDisconnect()
-      );
-      this.browserWSS.connect();
-    } else if (this.browserWSS.isConnected()) {
-      // Already connected, start immediately
-      await this.startBrowser(message);
-    }
-  }
-
-  private async startBrowser(message: BrowserStart): Promise<void> {
-    if (!this.browserWSS) {
-      console.error("Cannot start browser: browser WSS not initialized");
-      return;
-    }
-
-    let session: BrowserSession | null = null;
-    try {
-      session = new BrowserSession(message.sessionId, message.options);
-      await session.start();
-
-      // Check if browserWSS is still connected after async operation
-      if (!this.browserWSS) {
-        console.error("Browser WSS disconnected during browser startup, cleaning up");
-        await session.stop();
-        this.pendingBrowserStart = null;
-        return;
-      }
-
-      // Don't send ack for auto-started browser
-      const sendAck = !this.isAutoStartedBrowser;
-      await this.browserWSS.attachSession(session, sendAck);
-      this.pendingBrowserStart = null;
-      console.log(`Browser session ${message.sessionId} started successfully`);
-    } catch (err) {
-      console.error("Failed to start browser:", err);
-      // Clean up session if it was created
-      if (session?.isActive()) {
-        await session.stop().catch(() => { });
-      }
-      // Only send ack if browserWSS is still available and not auto-started
-      if (this.browserWSS && !this.isAutoStartedBrowser) {
-        this.browserWSS.sendAck(
-          message.sessionId,
-          "error",
-          err instanceof Error ? err.message : String(err)
-        );
-      }
-      this.pendingBrowserStart = null;
-    }
-  }
-
-  private async handleBrowserStop(message: BrowserStop): Promise<void> {
-    console.log(`Browser stop request for session ${message.sessionId}`);
-
-    if (!this.browserWSS) {
-      console.log("No browser WSS connection");
-      return;
-    }
-
-    const browserWSS = this.browserWSS;
-    const session = browserWSS.getSession();
-    if (session && session.sessionId === message.sessionId) {
-      browserWSS.sendAck(message.sessionId, "stopped");
-      await browserWSS.detachSession();
-      console.log(`Browser session ${message.sessionId} stopped`);
-
-      // Since the browser WSS connection is tied to the session ID in the hello message,
-      // we should disconnect it when the session stops.
-      browserWSS.disconnect();
-      this.browserWSS = null;
-    } else {
-      console.log(`Session ${message.sessionId} not found or mismatch`);
-    }
-  }
 
   private handleBrowserWSSConnect(): void {
     console.log("Browser WSS connected");
-    // If there's a pending start request, execute it now
-    if (this.pendingBrowserStart) {
-      this.startBrowser(this.pendingBrowserStart);
-    }
   }
 
   private handleBrowserWSSDisconnect(): void {
     console.log("Browser WSS disconnected, cleaning up browser session");
     this.browserWSS = null;
-    this.pendingBrowserStart = null;
-    this.isAutoStartedBrowser = false;
   }
 
   private send(message: Hello | Result): void {

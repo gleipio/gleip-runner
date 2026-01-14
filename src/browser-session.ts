@@ -1,5 +1,5 @@
 import { chromium, Browser, Page, Request } from "patchright";
-import type { BrowserStart, BrowserInputAction, BrowserTraffic } from "./types";
+import type { BrowserSessionOptions, BrowserInputAction, BrowserTraffic } from "./types";
 import { applyStealth, getRealisticUserAgent } from "./stealth";
 
 export class BrowserSession {
@@ -10,9 +10,9 @@ export class BrowserSession {
   private onBrowserClose: (() => void) | null = null;
   public sessionId: string;
   public url: string | undefined;
-  public options: BrowserStart["options"];
+  public options: BrowserSessionOptions | undefined;
 
-  constructor(sessionId: string, options?: BrowserStart["options"]) {
+  constructor(sessionId: string, options?: BrowserSessionOptions) {
     this.sessionId = sessionId;
     this.options = options;
   }

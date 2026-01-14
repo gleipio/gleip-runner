@@ -3,9 +3,7 @@ import type {
   BrowserWSSOutgoingMessage,
   BrowserWSSIncomingMessage,
   BrowserHello,
-  BrowserAck,
   BrowserTraffic,
-  BrowserClosed,
 } from "./types";
 import { BrowserSession } from "./browser-session";
 
@@ -87,43 +85,27 @@ export class BrowserWSS {
     this.send(hello);
   }
 
-  private async handleMessage(
-    message: BrowserWSSIncomingMessage
-  ): Promise<void> {
+  private async handleMessage(message: BrowserWSSIncomingMessage): Promise<void> {
     if (message.type === "browser:input") {
-      if (
-        this.session &&
-        this.session.sessionId === message.sessionId &&
-        this.session.isActive()
-      ) {
-        if (!message.action) {
-          console.warn("Received browser:input message without action", message);
-          return;
-        }
-
-        try {
-          await this.session.handleInput(message.action);
-        } catch (err) {
-          console.error("Input handling error:", err);
-        }
+      if (!this.session) {
+        console.error("Received browser input but no session is active");
+        return;
+      }
+      try {
+        await this.session.handleInput(message.action);
+      } catch (err) {
+        console.error("Error handling browser input:", err);
       }
     }
   }
 
-  async attachSession(session: BrowserSession, sendAck: boolean = true): Promise<void> {
+  async attachSession(session: BrowserSession): Promise<void> {
     if (this.session) {
       console.log("Detaching existing session before attaching new one");
       await this.detachSession();
     }
 
     this.session = session;
-
-    // Set up browser close handler
-    this.session.setOnBrowserClose(() => {
-      this.sendBrowserClosed(session.sessionId);
-      // Clean up the session locally since the browser is already closed
-      this.session = null;
-    });
 
     // Start traffic capture
     this.session.startTrafficCapture((traffic) => {
@@ -132,11 +114,6 @@ export class BrowserWSS {
 
     // Navigate to initial URL if provided (after traffic capture is set up)
     await this.session.navigateToInitialUrl();
-
-    // Send acknowledgment that browser started (only if requested)
-    if (sendAck) {
-      this.sendAck(session.sessionId, "started");
-    }
   }
 
   async detachSession(): Promise<void> {
@@ -145,25 +122,6 @@ export class BrowserWSS {
       await this.session.stop();
       this.session = null;
     }
-  }
-
-  sendAck(sessionId: string, status: "started" | "stopped" | "error", error?: string): void {
-    const ack: BrowserAck = {
-      type: "browser:ack",
-      sessionId,
-      status,
-      error,
-    };
-    this.send(ack);
-  }
-
-  sendBrowserClosed(sessionId: string): void {
-    const closed: BrowserClosed = {
-      type: "browser:closed",
-      sessionId,
-    };
-    this.send(closed);
-    console.log(`Notified server that browser closed for session ${sessionId}`);
   }
 
   sendTraffic(traffic: BrowserTraffic): void {

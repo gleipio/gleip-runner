@@ -41,32 +41,11 @@ export type Execute = {
   timeoutMs?: number;
 };
 
-// Browser control messages (Control WSS)
-export type BrowserStart = {
-  type: "browser:start";
-  sessionId: string;
-  options?: {
-    url?: string;
-    viewport?: { width: number; height: number };
-    headless?: boolean;
-  };
-};
-
-export type BrowserStop = {
-  type: "browser:stop";
-  sessionId: string;
-};
-
 // Browser WSS messages (frames and input)
 export type BrowserHello = {
   type: "browser:hello";
   runnerId: string;
   token: string;
-  sessionId: string;
-};
-
-export type BrowserClosed = {
-  type: "browser:closed";
   sessionId: string;
 };
 
@@ -94,13 +73,6 @@ export type BrowserInputEvent = {
   action: BrowserInputAction;
 };
 
-export type BrowserAck = {
-  type: "browser:ack";
-  sessionId: string;
-  status: "started" | "stopped" | "error";
-  error?: string;
-};
-
 export type BrowserTraffic = {
   type: "browser:traffic";
   sessionId: string;
@@ -123,7 +95,15 @@ export type BrowserTraffic = {
   timedOut?: boolean;
 };
 
-export type ServerMessage = Execute | BrowserStart | BrowserStop;
+export type BrowserSessionOptions = {
+  url?: string;
+  viewport?: {
+    width: number;
+    height: number;
+  };
+};
+
+export type ServerMessage = Execute;
 export type ClientMessage = Hello | Result;
-export type BrowserWSSOutgoingMessage = BrowserHello | BrowserAck | BrowserTraffic | BrowserClosed;
+export type BrowserWSSOutgoingMessage = BrowserHello | BrowserTraffic;
 export type BrowserWSSIncomingMessage = BrowserInputEvent;
